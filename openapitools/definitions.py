@@ -2,14 +2,6 @@ from typing import List, Dict, Any
 from openapitools.types import Definition, Schema
 
 
-class Reference(Schema):
-    def __init__(self, value):
-        super().__init__(**{'$ref': value})
-
-    def guard(self, fields: Dict[str, Any]):
-        return fields
-
-
 class Contact(Definition):
     name: str
     url: str
@@ -40,7 +32,7 @@ class Example(Definition):
     summary: str
     description: str
     value: Any
-    externalValue: str  # TODO
+    externalValue: str
 
     def __init__(self, value: Any, **kwargs):
         super().__init__(value=value, **kwargs)
@@ -109,7 +101,7 @@ class Parameter(Definition):
     allowEmptyValue: bool
     schema: Schema
 
-    def __init__(self, name, schema: Schema, location='query', **kwargs):
+    def __init__(self, name, schema: Schema, location: str = 'query', **kwargs):
         super().__init__(name=name, schema=schema, location=location, **kwargs)
 
     @property
@@ -121,7 +113,7 @@ class Parameter(Definition):
         return values
 
     @staticmethod
-    def make(name: str, schema: type, location: str, **kwargs):
+    def make(name: str, schema: Any, location: str = 'query', **kwargs):
         if location == 'path':
             kwargs['required'] = True
 
@@ -138,7 +130,7 @@ class Operation(Definition):
     parameters: List[Parameter]
     responses: Dict[str, Response]
     security: Dict[str, List[str]]
-    callbacks: List[str]  # TODO
+    callbacks: List[str]
     deprecated: bool
 
 
@@ -182,16 +174,54 @@ class SecurityScheme(Definition):
         return SecurityScheme(_type, **params, **kwargs)
 
 
+class ServerVariable(Definition):
+    default: str
+    description: str
+    enum: List[str]
+
+    def __init__(self, default: str, **kwargs):
+        super().__init__(default=default, **kwargs)
+
+
+class Server(Definition):
+    url: str
+    description: str
+    variables: List[ServerVariable]
+
+    def __init__(self, url: str, **kwargs):
+        super().__init__(url=url, **kwargs)
+
+
+class Header(Definition):
+    description: str
+    required: bool
+    deprecated: bool
+    allowEmptyValue: bool
+    schema: Schema
+
+    def __init__(self, schema: Schema, **kwargs):
+        super().__init__(schema=schema, **kwargs)
+
+
+class Link(Definition):
+    operationRef: str
+    operationId: str
+    parameters: Dict
+    requestBody: Any
+    description: str
+    server: Server
+
+
 class Components(Definition):
     schemas: Dict[str, Schema]
     responses: Dict[str, Response]
     parameters: Dict[str, Parameter]
     examples: Dict[str, Example]
     requestBodies: Dict[str, RequestBody]
-    headers: Dict[str, Schema]  # TODO
-    securitySchemes: Dict[str, Schema]  # TODO
-    links: Dict[str, Schema]  # TODO
-    callbacks: Dict[str, Schema]  # TODO
+    headers: Dict[str, Header]
+    securitySchemes: Dict[str, SecurityScheme]
+    links: Dict[str, Link]
+    callbacks: Dict[str, Dict[str, PathItem]]
 
 
 class Tag(Definition):
@@ -206,7 +236,7 @@ class Tag(Definition):
 class OpenAPI(Definition):
     openapi: str
     info: Info
-    servers: []  # TODO
+    servers: List[Server]
     paths: Dict[str, PathItem]
     components: Components
     security: Dict[str, SecurityScheme]

@@ -1,29 +1,57 @@
 from collections import defaultdict
 from openapitools.definitions import *
+from openapitools.types import Reference
 
 
 class ComponentsBuilder:
     _schemas: Dict[str, Schema]
+    _responses: Dict[str, Response]
+    _parameters: Dict[str, Parameter]
+    _examples: Dict[str, Example]
+    _bodies: Dict[str, RequestBody]
+    _headers: Dict[str, Header]
+    _links: Dict[str, Link]
+    _callbacks: Dict[str, Dict[str, PathItem]]
     _security: Dict[str, SecurityScheme]
 
     def __init__(self):
         self._schemas = {}
+        self._responses = {}
+        self._parameters = {}
+        self._examples = {}
+        self._bodies = {}
+        self._headers = {}
+        self._links = {}
+        self._callbacks = {}
         self._security = {}
 
-    def maybe_ref(self, content: Any, section: str = 'schema'):
+    def maybe_ref(self, section: str, content: Any):
         if type(content) != type:
             return content
 
-        if section == 'schema' and content.__name__ in self._schemas.keys():
-            return Reference("#/components/schemas/%s" % content.__name__)
+        objects = getattr(self, '_' + section, {})
+
+        if content.__name__ in objects.keys():
+            return Reference("#/components/%s/%s" % (section, content.__name__))
 
         return content
 
-    def scheme(self, name: str, value: Schema):
-        self._schemas[name] = value
+    def scheme(self, name: str, value: Any, **kwargs):
+        self._schemas[name] = Schema.make(self.maybe_ref('schemas', value), **kwargs)
 
-    def security(self, name: str, value: SecurityScheme):
-        self._security[name] = value
+    def response(self, name: str, value: Any, **kwargs):
+        self._responses[name] = value if isinstance(value, Response) else \
+            Response.make(self.maybe_ref('schemas', value), **kwargs)
+
+    def parameter(self, name: str, value: Any, location: str = 'query', **kwargs):
+        self._parameters[name] = value if isinstance(value, Parameter) else \
+            Parameter.make(name, self.maybe_ref('schemas', value), location, **kwargs)
+
+    def example(self, name: str, value: Any, **kwargs):
+        self._examples[name] = value if isinstance(value, Example) else Example(value, **kwargs)
+
+    def security(self, _type: str, name: str, cls: type, **kwargs):
+        self._security[name] = SecurityScheme.make(_type, cls, **kwargs)
 
     def build(self):
         return Components(schemas=self._schemas, securitySchemes=self._security)
@@ -39,7 +67,7 @@ class OperationBuilder:
     security: List[Any]
     parameters: List[Parameter]
     responses: Dict[str, Response]
-    callbacks: List[str]  # TODO
+    callbacks: List[str]
     deprecated: bool = False
 
     def __init__(self):

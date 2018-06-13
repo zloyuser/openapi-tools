@@ -1,8 +1,8 @@
 import json
 
 from datetime import date, time, datetime
-from typing import List, Dict, Any
-from openapitools.helpers import properties
+from typing import List, Dict, Any, Union
+from openapitools.helpers import properties, is_scalar
 
 
 class Definition:
@@ -24,75 +24,116 @@ class Definition:
     def __str__(self):
         return json.dumps(self.serialize())
 
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return isinstance(other, self.__class__) and self.__fields == other.__fields
+
+        return False
+
+    def __ne__(self, other):
+        return not(self == other)
+
+    def __hash__(self):
+        return hash(self)
+
 
 class Schema(Definition):
     type: str
     format: str
+    title: str
     description: str
-    nullable: False
+    nullable: bool
+    required: bool
     default: None
     example: None
     oneOf: List[Definition]
     anyOf: List[Definition]
     allOf: List[Definition]
 
+    _definitions = {}
+
     @staticmethod
-    def make(value):
+    def definitions():
+        return Schema._definitions
+
+    @staticmethod
+    def make(value, **kwargs):
         if isinstance(value, Schema):
             return value
 
-        if value == bool:
-            return Boolean()
-        elif value == int:
-            return Integer()
-        elif value == float:
-            return Float()
-        elif value == str:
-            return String()
-        elif value == bytes:
-            return Byte()
-        elif value == bytearray:
-            return Binary()
-        elif value == date:
-            return Date()
-        elif value == time:
-            return Time()
-        elif value == datetime:
-            return DateTime()
+        if value is None:
+            return Schema(nullable=True)
 
         _type = type(value)
 
-        if _type == bool:
-            return Boolean(default=value)
-        elif _type == int:
-            return Integer(default=value)
-        elif _type == float:
-            return Float(default=value)
-        elif _type == str:
-            return String(default=value)
-        elif _type == bytes:
-            return Byte(default=value)
-        elif _type == bytearray:
-            return Binary(default=value)
-        elif _type == date:
-            return Date()
-        elif _type == time:
-            return Time()
-        elif _type == datetime:
-            return DateTime()
-        elif _type == list:
-            if len(value) == 0:
-                schema = Schema(nullable=True)
-            elif len(value) == 1:
-                schema = Schema.make(value[0])
-            else:
-                schema = Schema(oneOf=[Schema.make(x) for x in value])
+        if is_scalar(_type):
+            kwargs['default'] = value
 
-            return Array(schema)
+        if _type == type:
+            _type = value
+
+        if _type == bool:
+            return Boolean(**kwargs)
+        elif _type == int:
+            return Integer(**kwargs)
+        elif _type == float:
+            return Float(**kwargs)
+        elif _type == complex:
+            return Float(**kwargs)  # TODO format?
+        elif _type == str:
+            return String(**kwargs)
+        elif _type == bytes:
+            return Byte(**kwargs)
+        elif _type == bytearray:
+            return Binary(**kwargs)
+        elif _type == object:
+            return Object(**kwargs)
+        elif _type == date:
+            return Date(**kwargs)
+        elif _type == time:
+            return Time(**kwargs)
+        elif _type == datetime:
+            return DateTime(**kwargs)
+        elif _type == list:
+            _items = Schema(nullable=True)
+
+            if value != list:
+                if len(value) == 1:
+                    _items = Schema.make(value[0])
+                elif len(value) > 1:
+                    _items = Schema(oneOf=[Schema.make(x) for x in value])
+
+            return Array(_items, **kwargs)
+        elif _type == range:
+            args = {}
+
+            if value != range:
+                args = {
+                    'minimum': min(value),
+                    'maximum': max(value)
+                }
+
+            return Array(Integer(**args), **kwargs)
         elif _type == dict:
-            return Object({k: Schema.make(v) for k, v in value.items()})
+            _properties = None
+
+            if value != dict:
+                _properties = {k: Schema.make(v) for k, v in value.items()}
+
+            return Object(_properties, **kwargs)
         else:
-            return Object({k: Schema.make(v) for k, v in properties(value).items()})
+            if value not in Schema._definitions:
+                Schema._definitions[value] = Object({k: Schema.make(v) for k, v in properties(value).items()}, **kwargs)
+
+            return Schema._definitions[value]
+
+
+class Reference(Schema):
+    def __init__(self, value):
+        super().__init__(**{'$ref': value})
+
+    def guard(self, fields: Dict[str, Any]):
+        return fields
 
 
 class Boolean(Schema):
@@ -100,39 +141,51 @@ class Boolean(Schema):
         super().__init__(type="boolean", **kwargs)
 
 
-class Integer(Schema):
+class Number(Schema):
+    multipleOf: Union[int, float]
+    maximum: Union[int, float]
+    exclusiveMaximum: bool
+    minimum: Union[int, float]
+    exclusiveMinimum: bool
+
+
+class Integer(Number):
     def __init__(self, **kwargs):
         super().__init__(type="integer", format="int32", **kwargs)
 
 
-class Long(Schema):
+class Long(Number):
     def __init__(self, **kwargs):
         super().__init__(type="integer", format="int64", **kwargs)
 
 
-class Float(Schema):
+class Float(Number):
     def __init__(self, **kwargs):
         super().__init__(type="number", format="float", **kwargs)
 
 
-class Double(Schema):
+class Double(Number):
     def __init__(self, **kwargs):
         super().__init__(type="number", format="double", **kwargs)
 
 
 class String(Schema):
+    maxLength: int
+    minLength: int
+    pattern: str
+
     def __init__(self, **kwargs):
         super().__init__(type="string", **kwargs)
 
 
-class Byte(Schema):
+class Byte(String):
     def __init__(self, **kwargs):
-        super().__init__(type="string", format="byte", **kwargs)
+        super().__init__(format="byte", **kwargs)
 
 
-class Binary(Schema):
+class Binary(String):
     def __init__(self, **kwargs):
-        super().__init__(type="string", format="binary", **kwargs)
+        super().__init__(format="binary", **kwargs)
 
 
 class Date(Schema):
@@ -150,28 +203,37 @@ class DateTime(Schema):
         super().__init__(type="string", format="date-time", **kwargs)
 
 
-class Password(Schema):
+class Password(String):
     def __init__(self, **kwargs):
         super().__init__(type="string", format="password", **kwargs)
 
 
-class Email(Schema):
+class Email(String):
     def __init__(self, **kwargs):
         super().__init__(type="string", format="email", **kwargs)
 
 
 class Object(Schema):
     properties: Dict[str, Schema]
+    maxProperties: int
+    minProperties: int
+    additionalProperties: Union[bool, Schema]
 
-    def __init__(self, _properties: Dict[str, Schema]=None, **kwargs):
-        super().__init__(type="object", properties=_properties or {}, **kwargs)
+    def __init__(self, _properties: Dict[str, Any]=None, **kwargs):
+        if _properties:
+            kwargs['properties'] = {k: Schema.make(v) for k, v in _properties.items()}
+
+        super().__init__(type="object", **kwargs)
 
 
 class Array(Schema):
     items: Schema
+    maxItems: int
+    minItems: int
+    uniqueItems: bool
 
-    def __init__(self, items: Schema, **kwargs):
-        super().__init__(type="array", items=items, **kwargs)
+    def __init__(self, items: Any, **kwargs):
+        super().__init__(type="array", items=Schema.make(items), **kwargs)
 
 
 def _serialize(value) -> Any:
