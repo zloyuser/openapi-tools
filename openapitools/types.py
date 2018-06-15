@@ -50,11 +50,7 @@ class Schema(Definition):
     anyOf: List[Definition]
     allOf: List[Definition]
 
-    _definitions = {}
-
-    @staticmethod
-    def definitions():
-        return Schema._definitions
+    definitions = {}
 
     @staticmethod
     def make(value, **kwargs):
@@ -122,10 +118,10 @@ class Schema(Definition):
 
             return Object(_properties, **kwargs)
         else:
-            if value not in Schema._definitions:
-                Schema._definitions[value] = Object({k: Schema.make(v) for k, v in properties(value).items()}, **kwargs)
+            if value not in Schema.definitions:
+                Schema.definitions[value] = Object({k: Schema.make(v) for k, v in properties(value).items()}, **kwargs)
 
-            return Schema._definitions[value]
+            return Schema.definitions[value]
 
 
 class Reference(Schema):

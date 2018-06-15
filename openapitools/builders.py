@@ -25,6 +25,8 @@ class ComponentsBuilder:
         self._callbacks = {}
         self._security = {}
 
+        Schema.definitions = self._schemas
+
     def maybe_ref(self, section: str, content: Any):
         if type(content) != type:
             return content
@@ -50,11 +52,21 @@ class ComponentsBuilder:
     def example(self, name: str, value: Any, **kwargs):
         self._examples[name] = value if isinstance(value, Example) else Example(value, **kwargs)
 
-    def security(self, _type: str, name: str, cls: type, **kwargs):
+    def security(self, name: str, _type: str, cls: type, **kwargs):
         self._security[name] = SecurityScheme.make(_type, cls, **kwargs)
 
     def build(self):
-        return Components(schemas=self._schemas, securitySchemes=self._security)
+        return Components(
+            schemas=self._schemas,
+            responses=self._responses,
+            parameters=self._parameters,
+            examples=self._examples,
+            requestBodies=self._bodies,
+            headers=self._headers,
+            links=self._links,
+            callbacks=self._callbacks,
+            securitySchemes=self._security
+        )
 
 
 class OperationBuilder:
